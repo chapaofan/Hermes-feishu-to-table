@@ -313,12 +313,6 @@ def _build_table_card(headers: List[str], rows: List[List[str]]) -> Dict[str, An
         },
     }
 
-    return {
-        "tag": "table",
-        "columns": columns,
-        "rows": data_rows,
-    }
-
 
 def _build_interactive_card_with_tables(text: str) -> Optional[Dict[str, Any]]:
     """Build a CardKit v2 interactive card if the text contains markdown tables.
