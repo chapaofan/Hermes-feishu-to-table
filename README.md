@@ -1,6 +1,6 @@
 # Hermes Feishu Table Renderer
 
-让 [Hermes Agent](https://github.com/anthropics/hermes-agent) 在飞书（Feishu/Lark）中把 Markdown 表格渲染成真正的 CardKit v2 表格组件，而不是丑陋的代码块。
+让 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 在飞书（Feishu/Lark）中把 Markdown 表格渲染成真正的 CardKit v2 表格组件，而不是丑陋的代码块。
 
 ## 问题
 
