@@ -87,6 +87,7 @@ hermes gateway restart
 - [飞书 CardKit v2 Table 组件官方文档](https://open.feishu.cn/document/feishu-cards/card-json-v2-components/content-components/table)
 - [飞书 CardKit v2 卡片结构](https://open.feishu.cn/document/feishu-cards/card-json-v2-structure/card-structure)
 - [飞书消息卡片接入指南](https://open.feishu.cn/document/feishu-cards/quick-start)
+- [原 Issue #9549](https://github.com/NousResearch/hermes-agent/issues/9549)
 
 ## License
 
