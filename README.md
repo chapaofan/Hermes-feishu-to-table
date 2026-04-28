@@ -16,7 +16,7 @@ Hermes 默认发送 Markdown 表格时，飞书会把表格当成普通文本或
 2. **`_build_table_card`**（Hermes 自己写的）— 把表格数据转成 CardKit v2 `table` 组件（`columns` + `rows` 对象数组格式）
 3. **`_build_interactive_card_with_tables`**（Hermes 自己写的）— 组装完整的 `schema: 2.0` 卡片
 4. **`_build_outbound_payload`**（Hermes 自己写的）— 发送前检测表格，有则发 `interactive` 卡片，无则走原逻辑
-5. **`_convert_markdown_tables_to_code`**（Hermes 自己写的）— 标记为 DEPRECATED，保留兼容旧调用，直接透传原文
+5. **`_convert_markdown_tables_to_code`**（Hermes 自己写的）— 新增标记为 DEPRECATED 的兼容函数，保留旧调用接口，直接透传原文
 
 ## CardKit v2 Table 格式
 
