@@ -267,13 +267,24 @@ def _build_table_card(headers: List[str], rows: List[List[str]]) -> Dict[str, An
       ]
     }
     """
+    import re
+
+    def _strip_md_bold(text: str) -> str:
+        """Strip markdown bold markers ** and __ from text."""
+        if not text:
+            return text
+        # Remove all ** and __ markers
+        text = re.sub(r'\*\*', '', text)
+        text = re.sub(r'__', '', text)
+        return text.strip()
+
     # Build columns definition
     columns = []
     for i, h in enumerate(headers):
         col_name = f"col_{i}"
         columns.append({
             "name": col_name,
-            "display_name": h or " ",
+            "display_name": _strip_md_bold(h) or " ",
             "data_type": "text",
             "width": "auto",
         })
@@ -285,8 +296,22 @@ def _build_table_card(headers: List[str], rows: List[List[str]]) -> Dict[str, An
         for i, cell in enumerate(row):
             if i < len(headers):
                 col_name = f"col_{i}"
-                row_obj[col_name] = cell or " "
+                row_obj[col_name] = _strip_md_bold(cell) or " "
         data_rows.append(row_obj)
+
+    return {
+        "tag": "table",
+        "columns": columns,
+        "rows": data_rows,
+        "header_style": {
+            "bold": True,
+            "text_align": "left",
+            "text_size": "normal",
+            "background_style": "none",
+            "text_color": "default",
+            "lines": 1
+        },
+    }
 
     return {
         "tag": "table",

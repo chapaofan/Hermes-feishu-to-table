@@ -13,10 +13,33 @@ Hermes 默认发送 Markdown 表格时，飞书会把表格当成普通文本或
 ## 改动点
 
 1. **`_parse_markdown_table`**（Hermes 自己写的）— 解析 Markdown 文本，提取表格段和非表格文本段
-2. **`_build_table_card`**（Hermes 自己写的）— 把表格数据转成 CardKit v2 `table` 组件（`columns` + `rows` 对象数组格式）
+2. **`_build_table_card`**（Hermes 自己写的）— 把表格数据转成 CardKit v2 `table` 组件（`columns` + `rows` 对象数组格式），自动处理表头加粗样式
 3. **`_build_interactive_card_with_tables`**（Hermes 自己写的）— 组装完整的 `schema: 2.0` 卡片
 4. **`_build_outbound_payload`**（Hermes 自己写的）— 发送前检测表格，有则发 `interactive` 卡片，无则走原逻辑
 5. **`_convert_markdown_tables_to_code`**（Hermes 自己写的）— 新增标记为 DEPRECATED 的兼容函数，保留旧调用接口，直接透传原文
+
+## 表头加粗处理
+
+Markdown 表格的表头通常带 `**粗体**` 标记，但飞书 CardKit v2 的 `text` 数据类型不支持 markdown 语法。解决方案：
+
+- 去掉单元格内容里的 `**` 和 `__` 标记，避免显示 raw markdown
+- 使用 `header_style: {bold: true}` 让表头统一加粗显示
+
+```json
+{
+  "tag": "table",
+  "columns": [...],
+  "rows": [...],
+  "header_style": {
+    "bold": true,
+    "text_align": "left",
+    "text_size": "normal",
+    "background_style": "none",
+    "text_color": "default",
+    "lines": 1
+  }
+}
+```
 
 ## CardKit v2 Table 格式
 
