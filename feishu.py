@@ -161,9 +161,24 @@ _POST_CONTENT_INVALID_RE = re.compile(r"content format of the post type is incor
 
 # Markdown table detection / conversion (mirrors OpenClaw behaviour for Feishu)
 # Feishu's `md` tag does NOT support table syntax — tables render as raw text.
-# We convert them to code blocks (pipe-aligned) before wrapping in post payload.
-_MARKDOWN_TABLE_LINE_RE = re.compile(r"^\s*\|(.+)\|\s*$")
-_MARKDOWN_TABLE_DIVIDER_RE = re.compile(r"^\s*\|(?:[-:]+\|)+\s*$")
+# We convert them to CardKit v2 `table` components via the interactive card
+# builder so the user actually sees a real table.
+#
+# A "table" line is a line that:
+#   - starts (after optional leading whitespace) with a `|`
+#   - ends with a `|` (optional, with optional trailing whitespace)
+#   - contains at least one additional `|` so we can split into >= 2 cells
+#
+# A divider is a line where every cell is dashes/colons (e.g. `| --- | :---: |`).
+# Common markdown forms (with or without the leading/trailing `|`) are all
+# accepted, matching the GFM table grammar.
+_MARKDOWN_TABLE_LINE_RE = re.compile(r"^\s*\|?.+\|.+\|?\s*$")
+_MARKDOWN_TABLE_DIVIDER_RE = re.compile(
+    r"^\s*\|?\s*:?[-]+:?(\s*\|\s*:?[-]+:?)+\s*\|?\s*$"
+)
+# Fenced code blocks (``` or ~~~) — their contents are never tables.
+_MARKDOWN_FENCE_OPEN_RE = re.compile(r"^\s*(```|~~~)")
+_MARKDOWN_FENCE_CLOSE_RE = re.compile(r"^\s*(```|~~~)\s*$")
 
 
 def _parse_markdown_table(text: str) -> List[Dict[str, Any]]:
@@ -171,6 +186,10 @@ def _parse_markdown_table(text: str) -> List[Dict[str, Any]]:
 
     Returns a list of dicts: each dict is either {"type": "text", "content": str}
     or {"type": "table", "headers": [...], "rows": [[...], ...]}.
+
+    A segment is only emitted as {"type": "table"} when at least one data row
+    was successfully parsed — otherwise the header is left in the surrounding
+    text so a stray divider line or empty table doesn't break the card.
     """
     if not text or "|" not in text:
         return [{"type": "text", "content": text}]
@@ -180,6 +199,8 @@ def _parse_markdown_table(text: str) -> List[Dict[str, Any]]:
     non_table_parts: List[str] = []
     table_lines: List[str] = []
     in_table = False
+    in_fence = False
+    fence_marker: Optional[str] = None  # "```" or "~~~"
 
     def _flush_non_table() -> None:
         if non_table_parts:
@@ -188,22 +209,32 @@ def _parse_markdown_table(text: str) -> List[Dict[str, Any]]:
                 segments.append({"type": "text", "content": joined})
             non_table_parts.clear()
 
+    def _parse_cells(line: str) -> List[str]:
+        stripped = line.strip()
+        if stripped.startswith("|"):
+            stripped = stripped[1:]
+        if stripped.endswith("|"):
+            stripped = stripped[:-1]
+        return [cell.strip() for cell in stripped.split("|")]
+
     def _flush_table() -> None:
         nonlocal table_lines
         if not table_lines:
             return
         header_line = table_lines[0].rstrip("\n")
-        row_lines = table_lines[2:] if len(table_lines) > 1 and _MARKDOWN_TABLE_DIVIDER_RE.match(table_lines[1]) else table_lines[1:]
-
-        def _parse_cells(line: str) -> List[str]:
-            stripped = line.strip()
-            if stripped.startswith("|"):
-                stripped = stripped[1:]
-            if stripped.endswith("|"):
-                stripped = stripped[:-1]
-            return [cell.strip() for cell in stripped.split("|")]
+        has_divider = (
+            len(table_lines) > 1
+            and _MARKDOWN_TABLE_DIVIDER_RE.match(table_lines[1]) is not None
+        )
+        row_lines = table_lines[2:] if has_divider else table_lines[1:]
 
         headers = _parse_cells(header_line)
+        # Need at least 2 header cells for a real table.
+        if len(headers) < 2:
+            non_table_parts.extend(table_lines)
+            table_lines = []
+            return
+
         rows = [_parse_cells(r) for r in row_lines]
         # Normalize row length to match headers
         for row in rows:
@@ -212,10 +243,38 @@ def _parse_markdown_table(text: str) -> List[Dict[str, Any]]:
             if len(row) > len(headers):
                 row[:] = row[:len(headers)]
 
+        if not rows:
+            # No data rows — emit as plain text rather than a broken empty table.
+            non_table_parts.extend(table_lines)
+            table_lines = []
+            return
+
         segments.append({"type": "table", "headers": headers, "rows": rows})
         table_lines = []
 
     for line in lines:
+        stripped = line.lstrip()
+
+        # Fenced code block tracking — pipes inside fences are never tables.
+        if in_fence:
+            if fence_marker and _MARKDOWN_FENCE_CLOSE_RE.match(line) and stripped.lstrip().startswith(fence_marker):
+                in_fence = False
+                fence_marker = None
+            non_table_parts.append(line)
+            continue
+
+        if _MARKDOWN_FENCE_OPEN_RE.match(line):
+            # If we were collecting a table, flush it before entering the fence.
+            if in_table:
+                _flush_table()
+                in_table = False
+            in_fence = True
+            # Use the actual marker (``` or ~~~) for the close check so they nest
+            # correctly (e.g. ``` inside ~~~ doesn't close the outer block).
+            fence_marker = stripped[:3] if stripped[:3] in ("```", "~~~") else stripped.split()[0]
+            non_table_parts.append(line)
+            continue
+
         if _MARKDOWN_TABLE_LINE_RE.match(line):
             if not in_table:
                 _flush_non_table()
@@ -229,12 +288,8 @@ def _parse_markdown_table(text: str) -> List[Dict[str, Any]]:
                 in_table = False
                 non_table_parts.append(line)
                 continue
-            if _MARKDOWN_TABLE_DIVIDER_RE.match(line):
-                table_lines.append(line)
-                continue
-            if _MARKDOWN_TABLE_LINE_RE.match(line):
-                table_lines.append(line)
-                continue
+            # Anything else that looks structured but isn't a real table row
+            # ends the current table and falls through to text.
             _flush_table()
             in_table = False
             non_table_parts.append(line)
@@ -270,12 +325,34 @@ def _build_table_card(headers: List[str], rows: List[List[str]]) -> Dict[str, An
     import re
 
     def _strip_md_bold(text: str) -> str:
-        """Strip markdown bold markers ** and __ from text."""
+        """Strip markdown inline formatting from cell text.
+
+        CardKit v2 table cells render as plain text — bold, italic, and
+        inline code markers are not interpreted. Leaving them in produces
+        ugly literal `**foo**` / `` `code` `` output, so we strip the
+        markers but keep the inner content. Em-dashes, tildes, snake_case
+        identifiers, and Feishu mention placeholders (``@_user_1``) are
+        preserved untouched.
+        """
         if not text:
             return text
-        # Remove all ** and __ markers
-        text = re.sub(r'\*\*', '', text)
-        text = re.sub(r'__', '', text)
+        # Strip **bold** and __bold__
+        text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+        text = re.sub(r"__(.+?)__", r"\1", text)
+        # Strip *italic* (single asterisks) — safe because asterisks don't
+        # appear in normal identifiers or Feishu placeholders.
+        text = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"\1", text)
+        # Strip _italic_ (single underscores) — but only when the underscores
+        # are flanked by non-word, non-underscore characters on BOTH sides.
+        # That keeps snake_case, @_user_1, and similar identifier-shaped
+        # tokens intact.
+        text = re.sub(
+            r"(?<![A-Za-z0-9_])_(?!_)(.+?)(?<!_)_(?!_)(?![A-Za-z0-9_])",
+            r"\1",
+            text,
+        )
+        # Strip `inline code` markers, keep the content
+        text = re.sub(r"`([^`\n]+)`", r"\1", text)
         return text.strip()
 
     # Build columns definition
